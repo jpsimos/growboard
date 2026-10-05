@@ -1,0 +1,153 @@
+<!-- Author Jacob A. Psimos -->
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+		<meta http-equiv="Pragma" content="no-cache" />
+		<meta author="jacob psimos">
+		<script type="text/javascript">
+			window.addEventListener("load", (event) => {
+				document.getElementById('btnSubmit').onclick = function(){
+					SerialCommand();
+				}
+				document.getElementById('txtCommand').addEventListener(
+					"keypress",
+					function(event){
+						if(event.key == "Enter"){
+							event.preventDefault();
+							SerialCommand();
+						}
+					}
+				);
+				console.log('[loaded]');
+			});
+			function SerialCommand()
+			{
+				ApiRequest(
+					null,
+					'GET',
+					{'command' : document.getElementById('txtCommand').value },
+					function(e){
+						var results = document.getElementById('resultContainer');
+						var response = document.createElement('p');
+						response.textContent = e.target.response;
+						results.append(response);
+						results.scrollTop = results.scrollTopMax;
+						document.getElementById('txtCommand').value = '';
+					}, function(e){
+						var results = document.getElementById('resultContainer');
+						var response = document.createElement('p');
+						response.textContent = 'error';
+						response.style.color = 'red';
+						results.append(response);
+						results.scrollTop = results.scrollTopMax;
+					}
+				);
+			}
+			function ApiRequest(url, method, parameters, onLoad, onError)
+			{
+				var xhr = new XMLHttpRequest();
+				if(url == null)
+				{
+					var bareUrlParamPos = window.location.href.indexOf('?');
+					bareUrlParamPos = bareUrlParamPos > 0 ? bareUrlParamPos : window.location.href.length;
+					url = window.location.href.substring(0, bareUrlParamPos);
+				}
+				if(parameters != null)
+				{
+					var parameterKeys = Object.keys(parameters);
+					if(parameterKeys.length > 0)
+					{
+						url += "?";
+						for(var i = 0; i < parameterKeys.length; i++)
+						{
+							url += parameterKeys[i] + "=" + encodeURIComponent(parameters[parameterKeys[i]]);
+							if(i < parameterKeys.length - 1)
+							{
+								url += "&";
+							}
+						}
+					}
+				}
+				xhr.onreadystatechange = (event) => {
+					if(event.target.readyState == XMLHttpRequest.DONE)
+					{
+						if(event.target.status >= 200 && event.target.status < 400)
+						{
+							if(onLoad != null && typeof onLoad == 'function')
+							{
+								onLoad(event);
+							}
+						}
+						else
+						{
+							if(onError != null && typeof onError == 'function')
+							{
+								onError(event);
+							}
+						}
+					}
+				};
+				xhr.onerror = (event) => {
+					if(onError != null && typeof onError == 'function')
+					{
+						onError(event);
+					}
+				}
+				xhr.open(method, url, true);
+				xhr.send();
+			}
+		</script>
+		<style type="text/css">
+			html,body{
+				height:100vh;
+				margin: 0;
+				padding: 0;
+				background-color: black;
+				color: white;
+			}
+			#mainContainer{
+				width:90%;
+				height:90%;
+				min-width: 90%;
+				max-width: 90%;
+				min-height: 90%;
+				max-height: 90%;
+				padding: 10px;
+				margin: auto;
+			}
+			#txtCommand{
+				width: calc(100% - 100px);
+				margin-top: 15px;
+			}
+			.row1{
+				width: calc(100% - 0px);
+				height: 300px;
+				max-height: 300px;
+				min-height: 300px;
+				margin: auto;
+				padding: 0;
+				overflow-y: scroll;
+				border-style: inset;
+			}
+			.diagTexture{
+				background-color: #e5e5f7;
+				opacity: 0.8;
+				background-size: 10px 10px;
+				background-image: repeating-linear-gradient(45deg, #444cf7 0, #444cf7 1px, #e5e5f7 0, #e5e5f7 50%);
+			}
+		</style>
+	</head>
+	<body>
+		<div id="mainContainer" class="diagTexture">
+			<h3>
+				<span style="font-size:14pt">&#128223; Control Interface</span>
+			</h3>
+			<div id="resultContainer" class="row1">
+			</div>
+			<input type="text" id="txtCommand" /> <input type="button" id="btnSubmit" value="Submit" />
+		</div>
+	</body>
+</html>
+

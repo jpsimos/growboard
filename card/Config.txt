@@ -1,0 +1,4 @@
+ssid=Yuri_MCV
+key=AlliedConstructionVehicle
+autoconnect=true
+http=enable
