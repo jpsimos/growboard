@@ -55,7 +55,7 @@ The Wi-Fi middleware does **not** automatically reconnect if the connection is l
 
 In the United States, Wi-Fi channels 12–14 are generally prohibited. The Atmel BSP should be modified to mask those channels.  
 
-For diffs that disable those channels, or for enabling C++17 support on the Feather board, contact the author at **jpsimos@gmail.com**.
+Required WiFi101 fork at github.com/jpsimos/WiFi101
 
 ## Getting Started
 
