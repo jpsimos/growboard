@@ -6,6 +6,8 @@
 #define __MIDDLEWARE_HPP
 
 #include <Arduino.h>
+#include <WiFi101.h>
+#include <functional>
 
 // Define integer results for ProcessSerialCommand abstraction.
 #define COMMAND_IGNORE    0            // Must be zero. Do not change.
@@ -13,20 +15,33 @@
 #define COMMAND_LAST      2
 #define COMMAND_ERROR     4
 
+#define MIDDLEWARE_TYPES \
+  MIDDLEWARE_TYPE_DEF(BASE = 0) \
+  MIDDLEWARE_TYPE_DEF(REAL_TIME_CLOCK) \
+  MIDDLEWARE_TYPE_DEF(SD_CARD) \
+  MIDDLEWARE_TYPE_DEF(WIFI_CARD) \
+  MIDDLEWARE_TYPE_DEF(HYGROMETER_SENSOR) \
+  MIDDLEWARE_TYPE_DEF(CCS811_SENSOR) \
+  MIDDLEWARE_TYPE_DEF(RELAY_CONTROLLER)
+
 class Middleware
 {
   public:
     static constexpr const size_t MaxCommandLengthInclTerm = 128;
-    static constexpr const size_t NumMiddlewares = 4;
+    static constexpr const size_t NumMiddlewares = 10;
     
     enum class AbstractType : int
     {
-      NONE,
-      REAL_TIME_CLOCK,
-      SD_CARD,
-      WIFI_CARD,
-      HYGROMETER_SENSOR,
+      #define MIDDLEWARE_TYPE_DEF(type) type,
+        MIDDLEWARE_TYPES
+      #undef MIDDLEWARE_TYPE_DEF
       MAX_VALUE
+    };
+
+    static constexpr const char* MiddlewareAbstractTypeNames[] = {
+      #define MIDDLEWARE_TYPE_DEF(type) #type,
+        MIDDLEWARE_TYPES
+      #undef MIDDLEWARE_TYPE_DEF
     };
 
   private:
@@ -35,17 +50,20 @@ class Middleware
     
   public:
     static Middleware** GetMiddlewares();
+    static void ForEach(std::function<bool(Middleware*)> callback);
+    bool GetWatchdog() const;
     bool Register();
+    bool Unregister();
     Middleware::AbstractType GetAbstractType() const;
-    virtual bool Initialize();
     virtual void Loop() {};
-    virtual int ProcessSerialCommands(const char inputLine[], ssize_t inputLineLength, Stream* stream);
+    virtual int ProcessSerialCommand(const char inputLine[], size_t inputLineLength);
+    virtual int ProcessRestfulApiCommand(const char inputLine[], size_t inputLineLength, WiFiClient& client);
 
   protected:
     Middleware(const Middleware::AbstractType abstractType);
     virtual ~Middleware() = default;
     const Middleware::AbstractType m_abstractType;
-    bool m_initialized;
+    bool m_watchdog;
 };
 
 #endif

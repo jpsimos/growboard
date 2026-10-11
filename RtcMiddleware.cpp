@@ -24,7 +24,29 @@ RtcMiddleware::RtcMiddleware(const bool interruptEnable) :
   m_interruptEnable(interruptEnable),
   m_rtcBoard(new RTC_PCF8523{})
 {
-  Initialize();
+    if(m_rtcBoard->begin())
+    {
+        pinMode(RTC1_SQWPIN, INPUT_PULLUP);
+        
+        if(!m_rtcBoard->initialized() || m_rtcBoard->lostPower())
+        {
+          m_rtcBoard->adjust(DateTime(__DATE__, __TIME__));
+        }
+        
+        m_rtcBoard->start();
+        // m_rtcBoard->calibrate(Pcf8523OffsetMode::PCF8523_TwoHours, 8);
+        
+        {
+          DateTime now = m_rtcBoard->now();
+          randomSeed(static_cast<uint32_t>(now.unixtime()));
+        }
+        
+        if(m_interruptEnable)
+        {
+          m_rtcBoard->writeSqwPinMode(PCF8523_SquareWave1HZ);
+          attachInterrupt(digitalPinToInterrupt(RTC1_SQWPIN), reinterpret_cast<void(*)()>(RtcMiddleware::HandleIsr), FALLING);
+        }
+    }
 }
 
 RtcMiddleware::~RtcMiddleware()
@@ -40,39 +62,9 @@ RtcMiddleware::~RtcMiddleware()
   }
 }
 
-bool RtcMiddleware::Initialize()
-{
-  if(!m_initialized && nullptr != m_rtcBoard)
-  {
-    if(m_rtcBoard->begin())
-    {
-        m_initialized = true;
-        pinMode(RTC1_SQWPIN, INPUT_PULLUP);
-        if(!m_rtcBoard->initialized() || m_rtcBoard->lostPower())
-        {
-          m_rtcBoard->adjust(DateTime(__DATE__, __TIME__));
-        }
-        m_rtcBoard->start();
-        m_rtcBoard->calibrate(Pcf8523OffsetMode::PCF8523_TwoHours, 8);
-        {
-          delay(10);
-          DateTime now = m_rtcBoard->now();
-          uint32_t rs = now.unixtime();
-          randomSeed(rs);
-        }
-        if(m_interruptEnable)
-        {
-          m_rtcBoard->writeSqwPinMode(PCF8523_SquareWave1HZ);
-          attachInterrupt(digitalPinToInterrupt(RTC1_SQWPIN), reinterpret_cast<void(*)()>(RtcMiddleware::HandleIsr), FALLING);
-        }
-    }
-  }
-  return m_initialized;
-}
-
 DateTime RtcMiddleware::Now()
 {
-  if(m_initialized)
+  if(m_rtcBoard != nullptr)
   {
     return m_rtcBoard->now();
   }
@@ -82,16 +74,54 @@ DateTime RtcMiddleware::Now()
 const char* const RtcMiddleware::NowString()
 {
     static char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
-    if(m_initialized)
+    if(m_rtcBoard != nullptr)
     {
       m_rtcBoard->now().toString(buffer);
     }
     return static_cast<const char* const>(buffer);
 }
 
-int RtcMiddleware::ProcessSerialCommands(const char inputLine[], ssize_t inputLineLength, Stream* stream)
+int RtcMiddleware::ProcessRestfulApiCommand(const char inputLine[], size_t inputLineLength, WiFiClient& client)
 {
-  int result = COMMAND_IGNORE;
+  int commandResult = COMMAND_IGNORE;
+  unsigned int month;
+  unsigned int day;
+  unsigned int year;
+  unsigned int hour;
+  unsigned int minute;
+  unsigned int second;
+  
+  if(Text::CStrEq(inputLine, "rtc read"))
+  {
+    char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
+    m_rtcBoard->now().toString(buffer);
+
+    client.print("{\"datetime\":\"");
+    client.print(buffer);
+    client.println("\"}");
+    
+    commandResult |= COMMAND_OK;
+  }
+  else if(6 == sscanf(inputLine, "rtc set %u/%u/%u %u:%u:%u", &month, &day, &year, &hour, &minute, &second))
+  {
+    m_rtcBoard->adjust(DateTime(year, month, day, hour, minute, second));
+
+    char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
+    m_rtcBoard->now().toString(buffer);
+
+    client.print("{\"new_datetime\":\"");
+    client.print(buffer);
+    client.println("\"}");
+    
+    commandResult |= COMMAND_OK;
+  }
+
+  return commandResult;
+}
+
+int RtcMiddleware::ProcessSerialCommand(const char inputLine[], size_t inputLineLength)
+{
+  int commandResult = COMMAND_IGNORE;
   unsigned int month;
   unsigned int day;
   unsigned int year;
@@ -99,20 +129,20 @@ int RtcMiddleware::ProcessSerialCommands(const char inputLine[], ssize_t inputLi
   unsigned int minute;
   unsigned int second;
 
-  if(Text::streq(inputLine, "clock read"))
+  if(Text::CStrEq(inputLine, "rtc read"))
   {
     char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
     m_rtcBoard->now().toString(buffer);
-    stream->println(buffer);
-    result |= COMMAND_OK;
+    Serial.println(buffer);
+    commandResult |= COMMAND_OK;
   }
-  else if(6 == sscanf(inputLine, "clock set %u/%u/%u %u:%u:%u", &month, &day, &year, &hour, &minute, &second))
+  else if(6 == sscanf(inputLine, "rtc set %u/%u/%u %u:%u:%u", &month, &day, &year, &hour, &minute, &second))
   {
     m_rtcBoard->adjust(DateTime(year, month, day, hour, minute, second));
-    result |= COMMAND_OK;
+    commandResult |= COMMAND_OK;
   }
   
-  return result;
+  return commandResult;
 }
 
 void RtcMiddleware::HandleIsr()

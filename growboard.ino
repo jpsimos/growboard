@@ -2,54 +2,71 @@
  * Author Jacob A. Psimos
  */
 
+#include "Common.h"
 #include "Middleware.h"
 #include "RtcMiddleware.h"
 #include "SdMiddleware.h"
 #include "WifiMiddleware.h"
 #include "HygrometerMiddleware.h"
-#include "Common.h"
+#include "RelayMiddleware.h"
+#include "AirQualityMiddleware.h"
+#include <Adafruit_SleepyDog.h>
 
 void setup()
 {
+  Watchdog.enable(10000, false);
   Serial.begin(9600);
   pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
 
   RtcMiddleware::CreateInstance()->Register();
   SdMiddleware::CreateInstance()->Register();
   WifiMiddleware::CreateInstance()->Register();
-  //HygrometerMiddleware::CreateInstance()->Register();
+  HygrometerMiddleware::CreateInstance()->Register();
+  RelayMiddleware::CreateInstance()->Register();
+  AirQualityMiddleware::CreateInstance()->Register();
 }
 
 void loop()
 {
   char command[Middleware::MaxCommandLengthInclTerm];
-  ssize_t commandLength;
+  size_t commandLength;
+  bool watchdog;
 
-  for(size_t middlewareIndex = 0; middlewareIndex < Middleware::NumMiddlewares; middlewareIndex++)
-  {
-      Middleware* middlewarePointer = Middleware::GetMiddlewares()[middlewareIndex];
-      
-      if(nullptr != middlewarePointer)
-      {
-        middlewarePointer->Loop();
-     }
-  }
+  Middleware::ForEach(
+    [=](Middleware* middlewarePtr) -> bool {
+      middlewarePtr->Loop();
+      return true;
+    }
+  );
 
-  commandLength = Text::ReadLine(command, Middleware::MaxCommandLengthInclTerm, IO::InOutStream);
+  commandLength = Text::ReadLine(command, Middleware::MaxCommandLengthInclTerm);
 
   if(commandLength > 0)
   {
-    Serial.print("Received: ");
-    Serial.println(command);
-    
-    for(size_t middlewareIndex = 0; middlewareIndex < Middleware::NumMiddlewares; middlewareIndex++)
-    {
-      Middleware* middlewarePointer = Middleware::GetMiddlewares()[middlewareIndex];
+     Middleware::ForEach(
+      [=](Middleware* middlewarePtr) -> bool {
+        middlewarePtr->ProcessSerialCommand(command, commandLength);
+        return true;
+      }
+    );
+  }
 
-      if(nullptr != middlewarePointer)
+  watchdog = true;
+
+  Middleware::ForEach(
+    [&](Middleware* middlewarePtr) -> bool {
+      if(!middlewarePtr->GetWatchdog())
       {
-        middlewarePointer->ProcessSerialCommands(command, commandLength, &Serial);
-     }
+        watchdog = false;
+        return false;
+      }
+      return true;
     }
+  );
+
+  if(watchdog)
+  {
+    Watchdog.reset();
   }
 }

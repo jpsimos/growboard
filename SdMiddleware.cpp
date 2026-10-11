@@ -22,148 +22,268 @@ SdMiddleware* SdMiddleware::GetInstance()
 }
 
 SdMiddleware::SdMiddleware() :
-  Middleware(Middleware::AbstractType::SD_CARD)
+  Middleware(Middleware::AbstractType::SD_CARD),
+  m_sd(),
+  m_checkCardTimer()
 {
-  Initialize();
+    if(m_sd.begin(SdSpiConfig(SD_CARD_CS_PIN, SHARED_SPI, SD_SCK_MHZ(12))))
+    {
+      FsDateTime::setCallback(SdMiddleware::FsDateTimeCallback);
+    }
 }
 
 SdMiddleware::~SdMiddleware()
 {
-  if(m_initialized)
-  {
-    m_sd.end();
-  }
+  m_sd.end();
 }
 
-bool SdMiddleware::Initialize()
+bool SdMiddleware::CheckSdCard()
 {
-  if(!m_initialized)
+  csd_t csd;
+  
+  if(m_sd.card()->readCSD(&csd) && csd.capacity() > 0)
   {
-    if(m_sd.begin(SdSpiConfig(SD_CARD_CS_PIN, SHARED_SPI, SD_SCK_MHZ(12))))
-    {
-      m_initialized = true;
-      digitalWrite(LED_BUILTIN, HIGH);
-      FsDateTime::setCallback(SdMiddleware::FsDateTimeCallback);
-    }
+    return true;
   }
-  return m_initialized;
+
+  return false;
 }
 
-int SdMiddleware::ProcessSerialCommands(const char inputLine[], ssize_t inputLineLength, Stream* stream)
+void SdMiddleware::Loop()
+{
+  if(m_checkCardTimer > CARD_CHECK_TIMER)
+  {
+    m_watchdog = CheckSdCard();
+    m_checkCardTimer = 0;
+  }
+}
+
+int SdMiddleware::ProcessSerialCommand(const char inputLine[], size_t inputLineLength)
 {
   int result = COMMAND_IGNORE;
-
-  if(Text::streq("sd test", inputLine))
+  cid_t cid;
+  csd_t csd;
+  scr_t scr;
+  uint32_t ocr;
+  bool readInfo;
+  
+  if(Text::CStrEq("sd status", inputLine))
   {
-    Serial.printf("LoadConfigTxt = %d\r\n", LoadConfigTxt(NULL, NULL, false));
-    result = COMMAND_OK;
+    if(
+      m_sd.card()->readCID(&cid) &&
+      m_sd.card()->readCSD(&csd) &&
+      m_sd.card()->readSCR(&scr) &&
+      m_sd.card()->readOCR(&ocr)
+    )
+    {
+      Serial.print("Card Type: ");
+      
+      switch(m_sd.card()->type())
+      {
+        case SD_CARD_TYPE_SD1:
+          Serial.println("SD1");
+          break;
+        case SD_CARD_TYPE_SD2:
+          Serial.println("SD2");
+          break;
+        case SD_CARD_TYPE_SDHC:
+          if(csd.capacity() < 70000000)
+          {
+            Serial.println("SDHC");
+          }
+          else
+          {
+            Serial.println("SDXC");
+          }
+          break;
+
+        default:
+          Serial.println("Unknown");
+          break;
+      }
+
+      Serial.printf("Manufacturer ID: %x\r\n", (int)cid.mid);
+      Serial.printf("OEM ID: %x%x\r\n", cid.oid[0], cid.oid[1]);
+      Serial.printf("Product ID: %x%x%x%x%x\r\n", cid.pnm[0], cid.pnm[1], cid.pnm[2], cid.pnm[3], cid.pnm[4]);
+      Serial.printf("Revision: %d.%d\r\n", (int)cid.prvN(), (int)cid.prvM());
+      Serial.printf("Serial Number: %x\r\n", cid.psn());
+      Serial.printf("Manufacturing Date: %d/%d\r\n", cid.mdtMonth(), cid.mdtYear());
+      
+      Serial.print("Size: ");
+      Serial.print(0.000512 * csd.capacity());
+      Serial.println(" MB");
+
+      Serial.print("Erase Size: ");
+      Serial.println((int)csd.eraseSize());
+
+      Serial.print("Erase Single Block: ");
+      Serial.println(csd.eraseSingleBlock() ? "true" : "false");
+
+      Serial.print("Data After Erase: ");
+      Serial.println(scr.dataAfterErase() ? "0xFF" : "0x00");
+      
+      result = COMMAND_OK;
+    }
+    else
+    {
+      result = COMMAND_ERROR;
+    }
   }
   
   return result;
 }
 
-int SdMiddleware::LoadConfigTxt(char* ssid, char* key, const bool updateWifiMiddleware)
+bool SdMiddleware::LoadConfigTxt(
+  char* ssid,
+  const size_t maxSsidBufLen,
+  char* key,
+  const size_t maxKeyBufLen,
+  bool& autoconnect,
+  bool& autoreconnect
+)
 {
-  int result = 0;
-  char line[128];
+  bool hadError;
+  int lineLength;
+  char* strippedLinePtr;
+  char line[CONFIG_FILE_LINE_BUFFER_SIZE];
   File32 configFile;
 
-  if(configFile.open("/Config.txt", FILE_READ))
+  hadError = !(ssid != nullptr && key != nullptr && maxSsidBufLen > 0 && maxKeyBufLen > 0);
+
+  if(!hadError && configFile.open("/Config.txt", FILE_READ))
   {
-    line[sizeof(line) - 1] = '\0';
-    for(int lineLength = configFile.fgets(line, sizeof(line) - 1); lineLength > 0; lineLength = configFile.fgets(line, sizeof(line)))
+    memset(&line[0], '\0', CONFIG_FILE_LINE_BUFFER_SIZE);
+    
+    for(lineLength = configFile.fgets(line, sizeof(line) - 1); lineLength > 0 && lineLength < CONFIG_FILE_LINE_BUFFER_SIZE; lineLength = configFile.fgets(line, sizeof(line)))
     {
-      Text::stripNewLine(line);
-      lineLength = strlen(line);
-      bool skip = false;
-      
-      for(char* comment = line; comment < &line[lineLength]; comment++)
+      Text::CStrStripNewLine(line);
+      strippedLinePtr = Text::CStrLStrip(line);
+      lineLength = strlen(strippedLinePtr);
+
+      if(lineLength > 0 && lineLength < CONFIG_FILE_LINE_BUFFER_SIZE)
       {
-        if(isblank(*comment))
+        if(strippedLinePtr[0] == ';')
         {
           continue;
         }
-        else if(*comment == ';')
-        {
-          skip = true;
-          break;
-        }
       }
-      if(skip)
+      else
       {
         continue;
       }
-      if(ssid != NULL && lineLength > 5 && line == strstr(line, "ssid="))
+
+      if(lineLength > 5 && line == strstr(line, "ssid="))
       {
-        strncpy(ssid, &line[5], 33);
-        ssid[32] = '\0';
-        result++;
+        strncpy(ssid, &line[5], maxSsidBufLen);
+        ssid[maxSsidBufLen - 1] = '\0';
       }
-      else if(key != NULL && lineLength > 4 && line == strstr(line, "key="))
+      else if(lineLength > 4 && line == strstr(line, "key="))
       {
-        strncpy(key, &line[4], 33);
-        key[32] = '\0';
-        result++;
+        strncpy(key, &line[4], maxKeyBufLen);
+        key[maxKeyBufLen - 1] = '\0';
       }
-      else if(updateWifiMiddleware)
+      else if(Text::CStrEq(line, "autoconnect=true", false))
       {
-        if(Text::streq(line, "autoconnect=true"))
-        {
-          WifiMiddleware::GetInstance()->SetAutoconnect(true);
-        }
-        else if(Text::streq(line, "autoconnect=false"))
-        {
-          WifiMiddleware::GetInstance()->SetAutoconnect(false);
-        }
-        else if(Text::streq(line, "http=disable"))
-        {
-          WifiMiddleware::GetInstance()->SetHttpEnabled(false);
-        }
-        else if(Text::streq(line, "http=enable"))
-        {
-          WifiMiddleware::GetInstance()->SetHttpEnabled(true);
-        }
+          autoconnect = true;
+      }
+      else if(Text::CStrEq(line, "autoreconnect=true", false))
+      {
+        autoreconnect = true;
+      }
+      else
+      {
+        hadError = true;
+        break;
       }
     }
     configFile.close();
   }
-  return result;
+  else
+  {
+    hadError = true;
+  }
+  return !hadError;
 }
 
-void SdMiddleware::AppendLog(const char path[], const char msg[])
+bool SdMiddleware::LoadAirQualityBaseline(uint16_t& baseline)
+{
+  File32 airQualityBaselineFile;
+  bool hadError = !airQualityBaselineFile.open("/AirQualityBaseline.bin", FILE_READ);
+  
+  if(!hadError)
+  {
+    hadError = !(airQualityBaselineFile.read(reinterpret_cast<void*>(&baseline), sizeof(uint16_t)) == sizeof(uint16_t));
+    airQualityBaselineFile.close();
+  }
+
+  return !hadError;
+}
+
+bool SdMiddleware::SaveAirQualityBaseline(const uint16_t baseline)
+{
+  bool hadError;
+  File32 airQualityBaselineFile;
+
+  hadError = !airQualityBaselineFile.open("/AirQualityBaseline.bin", FILE_WRITE);
+
+  if(!hadError)
+  {
+    hadError = !(airQualityBaselineFile.write(reinterpret_cast<void*>(const_cast<uint16_t*>(&baseline)), sizeof(uint16_t)) == sizeof(uint16_t));
+    airQualityBaselineFile.close();
+  }
+
+  return !hadError;
+}
+
+bool SdMiddleware::AppendLog(const char path[], const char msg[])
 {
   File32 file;
-  const size_t msgLength = strlen(msg);
-  if(msgLength > 0)
+  size_t msgLength;
+  bool hadError = !(path && msg && nullptr != RtcMiddleware::GetInstance());
+  
+  if(!hadError)
   {
-    if(!file.open(path, FILE_APPEND))
+    msgLength = strlen(msg);
+    
+    if(msgLength > 0)
     {
-      file.open(path, FILE_WRITE);
-    }
-    if(file.isOpen())
-    {
-      const char* const now = RtcMiddleware::GetInstance()->NowString();
-      file.write(now, strlen(now));
-      file.write("\t", 1);
-      file.write(msg, msgLength);
-      if(msg[msgLength - 1] != '\n')
+      if(!file.open(path, FILE_APPEND))
       {
-        file.write("\r\n", 2);
+        file.open(path, FILE_WRITE);
       }
-      file.close();
+      if(file.isOpen())
+      {
+        const char* const now = RtcMiddleware::GetInstance()->NowString();
+        file.write(now, strlen(now));
+        file.write("\t", 1);
+        file.write(msg, msgLength);
+        if(msg[msgLength - 1] != '\n')
+        {
+          file.write("\r\n", 2);
+        }
+        file.close();
+      }
+      else
+      {
+        hadError = true;
+      }
     }
   }
+
+  return !hadError;
 }
 
 uint64_t SdMiddleware::GetFileLength(const char path[])
 {
   uint64_t length = 0;
   File32 file;
-  if(file.open(path, FILE_READ))
+  
+  if(path && file.open(path, FILE_READ))
   {
     length = file.fileSize();
     file.close();
   }
+  
   return length;
 }
 
@@ -171,7 +291,8 @@ int SdMiddleware::ReadFile(const char path[], unsigned char data[], const size_t
 {
   int numBytes = 0;
   File32 file;
-  if(data && dataSize > 0 && file.open(path, FILE_READ))
+  
+  if(path && data && dataSize > 0 && file.open(path, FILE_READ))
   {
     numBytes = file.read(data, dataSize);
     file.close();
@@ -184,7 +305,7 @@ int SdMiddleware::ReadFile(const char path[], unsigned char chunkBuffer[], const
   int numBytes = 0;
   File32 file;
   
-  if(file.open(path, FILE_READ))
+  if(path && chunkBuffer && chunkSize > 0 && file.open(path, FILE_READ))
   {
     while(numBytes < file.fileSize())
     {
@@ -215,11 +336,11 @@ void SdMiddleware::FsDateTimeCallback(uint16_t* date, uint16_t* time)
   if(nullptr != rtcMiddleware)
   {
     DateTime now = rtcMiddleware->Now();
-    if(date != NULL)
+    if(date != nullptr)
     {
        *date = FS_DATE(now.year(), now.month(), now.day());
     }
-    if(time != NULL)
+    if(time != nullptr)
     {
       *time = FS_TIME(now.hour(), now.minute(), now.second());
     }

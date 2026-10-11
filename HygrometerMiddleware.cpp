@@ -22,7 +22,7 @@ HygrometerMiddleware* HygrometerMiddleware::GetInstance()
 
 HygrometerMiddleware::HygrometerMiddleware() :
   Middleware(Middleware::AbstractType::HYGROMETER_SENSOR),
-  m_sht41(NULL),
+  m_sht41(new Adafruit_SHT4x()),
   m_hygSampleTimer(0U),
   m_temperature(0.0f),
   m_humidity(0.0f),
@@ -31,42 +31,26 @@ HygrometerMiddleware::HygrometerMiddleware() :
   m_minTemperature(std::numeric_limits<float>::max()),
   m_minHumidity(std::numeric_limits<float>::max())
 {
-  Initialize();
-}
-
-bool HygrometerMiddleware::Initialize()
-{
-  if(!m_initialized)
-  {
-    if(m_sht41 == NULL)
+    if(m_sht41->begin())
     {
-      m_sht41 = new Adafruit_SHT4x();
+      m_sht41->setPrecision(SHT4X_MED_PRECISION);
+      m_sht41->setHeater(SHT4X_MED_HEATER_100MS);
     }
-    if(m_sht41 != NULL)
-    {
-      if(m_sht41->begin())
-      {
-        m_sht41->setPrecision(SHT4X_MED_PRECISION);
-        m_sht41->setHeater(SHT4X_MED_HEATER_100MS);
-        m_initialized = true;
-      }
-    }
-  }
-  return m_initialized;
 }
 
 bool HygrometerMiddleware::Sample(float* temperature, float* humidity)
 {
   sensors_event_t humidity_;
-  sensors_event_t temp;
-  if(m_initialized)
+  sensors_event_t temperature_;
+  
+  if(m_sht41 != nullptr)
   {
     if(m_hygSampleTimer > 200)
     {
       m_hygSampleTimer = 0;
-      if(m_sht41->getEvent(&humidity_, &temp))
+      if(m_sht41->getEvent(&humidity_, &temperature_))
       {
-        m_temperature = (((float)temp.temperature * 9.0) / 5.0) + 32.0;
+        m_temperature = (((float)temperature_.temperature * 9.0) / 5.0) + 32.0;
         m_humidity = (float)humidity_.relative_humidity;
         if(m_temperature > m_maxTemperature)
         {
@@ -90,11 +74,11 @@ bool HygrometerMiddleware::Sample(float* temperature, float* humidity)
         return false;
       }
     }
-    if(temperature != NULL)
+    if(temperature != nullptr)
     {
       *temperature = m_temperature;
     }
-    if(humidity != NULL)
+    if(humidity != nullptr)
     {
       *humidity = m_humidity;
     }
@@ -123,54 +107,74 @@ float HygrometerMiddleware::GetMinHumidity()
   return m_minHumidity;
 }
 
-void HygrometerMiddleware::Loop()
+int HygrometerMiddleware::ProcessRestfulApiCommand(const char inputLine[], size_t inputLineLength, WiFiClient& client)
 {
+  int commandResult = COMMAND_IGNORE;
+
+  if(Text::CStrEq(inputLine, "hyg status"))
+  {
+    if(Sample(nullptr, nullptr))
+    {
+      client.print("{\"temperature\":");
+      client.print(m_temperature);
+      client.print(",\"humidity\":");
+      client.print(m_humidity);
+      client.println("}");
+      commandResult = COMMAND_OK;
+    }
+    else
+    {
+      commandResult = COMMAND_ERROR;
+    }
+  }
+
+  return commandResult;
 }
 
-int HygrometerMiddleware::ProcessSerialCommands(const char inputLine[], ssize_t inputLineLength, Stream* stream)
+int HygrometerMiddleware::ProcessSerialCommand(const char inputLine[], size_t inputLineLength)
 {
-  int result = COMMAND_IGNORE;
-  if(Text::streq(inputLine, "hyg sample"))
+  int commandResult = COMMAND_IGNORE;
+  if(Text::CStrEq(inputLine, "hyg read"))
   {
-    if(Sample(NULL, NULL))
+    if(Sample(nullptr, nullptr))
     {
-      stream->print("Temperature: ");
-      stream->print(m_temperature);
-      stream->println(" F");
-      stream->print("Humidity: ");
-      stream->print(m_humidity);
-      stream->println("% rH");
-      result = COMMAND_OK;
+      Serial.print("Temperature: ");
+      Serial.print(m_temperature);
+      Serial.println(" F");
+      Serial.print("Humidity: ");
+      Serial.print(m_humidity);
+      Serial.println("% rH");
+      commandResult = COMMAND_OK;
     }
     else
     {
-      result = COMMAND_ERROR;
+      commandResult = COMMAND_ERROR;
     }
   }
-  else if(Text::streq(inputLine, "hyg stats"))
+  else if(Text::CStrEq(inputLine, "hyg status"))
   {
-    if(Sample(NULL, NULL))
+    if(Sample(nullptr, nullptr))
     {
-      stream->print("Temperature: ");
-      stream->print(m_temperature);
-      stream->print(", ");
-      stream->print(m_minTemperature);
-      stream->print(", ");
-      stream->print(m_maxTemperature);
-      stream->println(" F");
-      stream->print("Humidity: ");
-      stream->print(m_humidity);
-      stream->print(", ");
-      stream->print(m_minHumidity);
-      stream->print(", ");
-      stream->print(m_maxHumidity);
-      stream->println(" %");
-      result = COMMAND_OK;
+      Serial.print("Temperature: ");
+      Serial.print(m_temperature);
+      Serial.print(", ");
+      Serial.print(m_minTemperature);
+      Serial.print(", ");
+      Serial.print(m_maxTemperature);
+      Serial.println(" F");
+      Serial.print("Humidity: ");
+      Serial.print(m_humidity);
+      Serial.print(", ");
+      Serial.print(m_minHumidity);
+      Serial.print(", ");
+      Serial.print(m_maxHumidity);
+      Serial.println(" %");
+      commandResult = COMMAND_OK;
     }
     else
     {
-      result = COMMAND_ERROR;
+      commandResult = COMMAND_ERROR;
     }
   }
-  return result;
+  return commandResult;
 }

@@ -27,184 +27,132 @@ WifiMiddleware::WifiMiddleware() :
   Middleware(Middleware::AbstractType::WIFI_CARD),
   m_wifiClass(&WiFi),
   m_wifiServer(new WiFiServer{80}),
+  m_loadedConfigFile(false),
+  m_initialConnect(false),
   m_autoConnect(false),
-  m_enableHttp(false),
-  m_verbose(true)
+  m_autoReconnect(false),
+  m_verbose(true),
+  m_clientTimer(),
+  m_connectTimer(),
+  m_ssid(),
+  m_key()
 {
   m_wifiClass->setPins(WF_CS_PIN, WF_IRQ_PIN, WF_RST_PIN, WF_EN_PIN);
+
+  if(nullptr != SdMiddleware::GetInstance())
+  {
+    m_loadedConfigFile = SdMiddleware::GetInstance()->LoadConfigTxt(m_ssid, SSID_BUFFER_SIZE, m_key, KEY_BUFFER_SIZE, m_autoConnect, m_autoReconnect);
+  }
 }
 
 WifiMiddleware::~WifiMiddleware()
 {
-  if(m_wifiServer != NULL)
+  if(m_wifiServer != nullptr)
   {
+    m_wifiServer->stop();
     delete m_wifiServer;
   }
 }
 
-bool WifiMiddleware::Initialize()
-{
-  char ssid[33];
-  char key[33];
-
-  if(m_wifiServer)
-  {
-    if(!m_initialized)
-    {
-      if(SdMiddleware::GetInstance()->LoadConfigTxt(ssid, key, true) == 2)
-      {
-        if(m_autoConnect)
-        {
-          m_wifiClass->begin(ssid, key);
-          m_autoConnect = false;
-        }
-        m_initialized = true;
-      }
-    }
-    else
-    {
-      if(!Connected())
-      {
-        if(m_autoConnect && SdMiddleware::GetInstance()->LoadConfigTxt(ssid, key, false) == 2)
-        {
-          m_wifiClass->begin(ssid, key);
-          m_autoConnect = false;
-        }
-        if(m_enableHttp || m_wifiServer->status())
-        {
-          m_wifiServer->stop();
-        }
-      }
-      else
-      {
-        if(m_enableHttp && !m_wifiServer->status())
-        {
-          m_wifiServer->begin();
-        }
-        else if(!m_enableHttp && m_wifiServer->status())
-        {
-          m_wifiServer->stop();
-        }
-      }
-    }
-  }
-  return m_initialized;
-}
-
 bool WifiMiddleware::Connected() const
 {
-  return static_cast<bool>(m_wifiClass->status() == WL_CONNECTED);
-}
-
-void WifiMiddleware::SetAutoconnect(const bool autoConnect)
-{
-  m_autoConnect = autoConnect;
-}
-
-void WifiMiddleware::SetHttpEnabled(const bool httpEnable)
-{
-  m_enableHttp = httpEnable;
+  if(m_wifiClass != nullptr)
+  {
+    return static_cast<bool>(m_wifiClass->status() == WL_CONNECTED);
+  }
+  return false;
 }
 
 void WifiMiddleware::Loop()
 {
-  if(!m_initialized)
+  // Load the Config.txt file if it isn't already and connect to WiFi. Retry timer is 10 seconds.
+  // Then process the HTTP Server if the WiFi is connected.
+  
+  if(!m_loadedConfigFile)
   {
-    Initialize();
+    if(nullptr != SdMiddleware::GetInstance())
+    {
+      m_loadedConfigFile = SdMiddleware::GetInstance()->LoadConfigTxt(m_ssid, SSID_BUFFER_SIZE, m_key, KEY_BUFFER_SIZE, m_autoConnect, m_autoReconnect);
+    }
   }
-  else
+  else if(!m_initialConnect && m_autoConnect && !Connected())
   {
-    if(!Connected())
+    if(m_connectTimer > 10000)
     {
-      if(m_autoConnect)
-      {
-        Initialize();
-      }
+      m_wifiClass->begin(m_ssid, m_key);
+      m_initialConnect = true;
+      m_connectTimer = 0;
     }
-    else
+  }
+  else if(m_initialConnect && m_autoReconnect && !Connected())
+  {
+    if(m_connectTimer > 10000)
     {
-      if((m_enableHttp && !m_wifiServer->status()) || (!m_enableHttp && m_wifiServer->status()))
-      {
-        Initialize();
-      }
-      if(m_enableHttp && m_wifiServer->status())
-      {
-        ProcessHttpServer();
-      }
+      m_wifiClass->begin(m_ssid, m_key);
+      m_connectTimer = 0;
     }
+  }
+  else if(m_initialConnect & !Connected() && m_wifiServer->status())
+  {
+    m_wifiServer->stop();
+  }
+  else if(m_initialConnect && Connected() && !m_wifiServer->status())
+  {
+    m_wifiServer->begin();
+  }
+  
+  if(Connected() && m_wifiServer->status())
+  {
+    ProcessHttpServer();
   }
 }
 
-int WifiMiddleware::ProcessSerialCommands(const char inputLine[], ssize_t inputLineLength, Stream* stream)
+int WifiMiddleware::ProcessSerialCommand(const char inputLine[], size_t inputLineLength)
 {
-  int result = COMMAND_IGNORE;
+  int commandResult = COMMAND_IGNORE;
   unsigned int led;
   unsigned int value;
 
-  if(Text::streq(inputLine, "wifi scan"))
+  if(Text::CStrEq(inputLine, "wifi scan"))
   {
       int numSsid = m_wifiClass->scanNetworks(true);
+      
       for(int thisNet = 0; thisNet < numSsid; thisNet++)
       {
         uint8_t macAddr[6];
         m_wifiClass->BSSID(thisNet, macAddr);
-        stream->printf("%2u ", m_wifiClass->channel(thisNet));
-        stream->printf("%02x:%02x:%02x:%02x:%02x:%02x ", macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
-        stream->print(m_wifiClass->RSSI(thisNet));
-        stream->print(' ');
-        stream->println(m_wifiClass->SSID(thisNet));
+        Serial.printf("%2u ", m_wifiClass->channel(thisNet));
+        Serial.printf("%02x:%02x:%02x:%02x:%02x:%02x ", macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
+        Serial.print(m_wifiClass->RSSI(thisNet));
+        Serial.print(' ');
+        Serial.println(m_wifiClass->SSID(thisNet));
       }
-      result |= COMMAND_OK;
+      commandResult |= COMMAND_OK;
   }
-  else if(Text::streq(inputLine, "wifi status"))
+  else if(Text::CStrEq(inputLine, "wifi status"))
   {
     const int wifiStatus = (int)m_wifiClass->status();
-    stream->print("Initialized: ");
-    stream->println(m_initialized ? "true" : "false");
-    stream->print("Status: ");
-    stream->println(wifiStatus);
-    stream->print("AutoConnect: ");
-    stream->print(m_autoConnect ? "true " : "false ");
-    stream->println(Connected() ? "(done)" : "(await)");
+    Serial.print("Status: ");
+    Serial.println(wifiStatus);
+    Serial.print("AutoReconnect: ");
+    Serial.println(m_autoReconnect ? "true " : "false ");
+    Serial.print("Connected: ");
+    Serial.println(Connected() ? "true" : "false");
+    
     if(Connected())
     {
-      stream->print("SSID: ");
-      stream->println(m_wifiClass->SSID());
-      stream->printf("RSSI: %d\n", (int)(m_wifiClass->RSSI()));
-      stream->print("IP Address: ");
-      stream->println(IPAddress(m_wifiClass->localIP()));
-      stream->print("http: ");
-      stream->print(m_enableHttp ? "enabled " : "disabled ");
-      stream->printf("(status = %d)\r\n", (int)m_wifiServer->status());
+      Serial.print("SSID: ");
+      Serial.println(m_wifiClass->SSID());
+      Serial.printf("RSSI: %d\n", (int)(m_wifiClass->RSSI()));
+      Serial.print("IP Address: ");
+      Serial.println(IPAddress(m_wifiClass->localIP()));
+      Serial.print("http: ");
+      Serial.printf("(status = %d)\r\n", (int)m_wifiServer->status());
     }
-    result |= COMMAND_OK;
+    commandResult |= COMMAND_OK;
   }
-  else if(Text::streq(inputLine, "autoconnect enable"))
-  {
-    m_autoConnect = true;
-    result |= COMMAND_OK;
-  }
-  else if(Text::streq(inputLine, "autoconnect disable"))
-  {
-    m_autoConnect = false;
-    result |= COMMAND_OK;
-  }
-  else if(Text::streq(inputLine, "http disable"))
-  {
-    m_enableHttp = false;
-    result |= COMMAND_OK;
-  }
-  else if(Text::streq(inputLine, "http enable"))
-  {
-    m_enableHttp = true;
-    result |= COMMAND_OK;
-  }
-  else if(Text::streq(inputLine, "http verbose"))
-  {
-    m_verbose = !m_verbose;
-    result |= COMMAND_OK;
-  }
-  return result;
+
+  return commandResult;
 }
 
 void WifiMiddleware::ProcessHttpServer()
@@ -217,11 +165,16 @@ void WifiMiddleware::ProcessHttpServer()
   char requestParamNames[MAX_REQUEST_PARAMS][REQUEST_PARAM_NAME_BUFFER_SIZE];
   char requestParamValues[MAX_REQUEST_PARAMS][REQUEST_PARAM_VALUE_BUFFER_SIZE];
   char* responseBuffer = requestBuffer;
+
+  // Every 10ms, handle client connections and process their HTTP requests.
+  // Parse the GET parameter(s,) if any, and send "text/html" or "text/json"
+  // based on the presense of GET param(s.)
   
   if(m_clientTimer >= 10)
   {
     WiFiClient client = m_wifiServer->available();
-    if (client)
+    
+    if(client)
     {
       for(elapsedMillis timeout; !timedOut; timedOut = (bool)(timeout >= 200UL))
       {
@@ -229,17 +182,16 @@ void WifiMiddleware::ProcessHttpServer()
         {
           if(client.available())
           {
-            const char nextChar = client.read();
-            requestBuffer[requestLength++] = nextChar;
+            requestBuffer[requestLength++] = static_cast<char>(client.read());
             requestBuffer[requestLength] = '\0';
             if(requestLength > 3)
             {
-              if(Text::streq(&requestBuffer[requestLength - 3], "\n\r\n"))
+              if(Text::CStrEq(&requestBuffer[requestLength - 3], "\n\r\n"))
               {
                 break;
               }
             }
-            timeout = 0UL;
+            timeout = 0;
           }
         }
         else
@@ -253,22 +205,34 @@ void WifiMiddleware::ProcessHttpServer()
       {
         if(m_verbose)
         {
-          IO::InOutStream->println(requestBuffer);
+          Serial.println(requestBuffer);
         }
 
         client.print(
           "HTTP/1.1 200 OK\r\n"
-          "Content-Type: text/html\r\n"
-          "Connection: close\r\n"
-          "\r\n"
+          "Content-Type: text/"
         );
         
         if(requestLength > 4 && requestBuffer == strstr(requestBuffer, "GET"))
         {
           char* requestParams = strchr(requestBuffer, '?');
-          char* requestParamsEnd = requestParams ? strstr(++requestParams, " HTTP/1.1\r\n") : NULL;
+          char* requestParamsEnd = requestParams ? strstr(++requestParams, " HTTP/1.1\r\n") : nullptr;
           requestParamsLength = (size_t)max(0, (ssize_t)requestParamsEnd - (ssize_t)requestParams);
           requestParamsCount = ParseRequestParams(requestParams, requestParamsLength, requestParamNames, requestParamValues);
+        
+          if(!requestParamsCount)
+          {
+            client.println("html");
+          }
+          else
+          {
+            client.println("json");
+          }
+
+          client.println(
+            "Connection: close\r\n"
+            "\r\n"
+          );
 
           for(size_t param = 0; param < requestParamsCount; param++)
           {
@@ -281,30 +245,35 @@ void WifiMiddleware::ProcessHttpServer()
             {
               if(m_verbose)
               {
-                IO::InOutStream->print(paramName);
-                IO::InOutStream->print(" = ");
+                Serial.print(paramName);
+                Serial.print(" = ");
                 if(paramValueLength)
                 {
-                  IO::InOutStream->println(paramValue);
+                  Serial.println(paramValue);
                 }
               }
-              if(paramValueLength && Text::streq(paramName, "command"))
+              if(paramValueLength && Text::CStrEq(paramName, "command"))
               {
-                int commandResult = COMMAND_IGNORE;
-                //commandResult |= RtcMiddleware::GetInstance()->ProcessSerialCommands(paramValue, paramValueLength, &client);
-                //commandResult |= HygrometerMiddleware::GetInstance()->ProcessSerialCommands(paramValue, paramValueLength, &client);
-                client.println((commandResult == COMMAND_OK) ? "OK" : "ERR");
+                for(size_t middlewareIndex = 0; middlewareIndex < Middleware::NumMiddlewares; middlewareIndex++)
+                {
+                  Middleware* middlewarePointer = Middleware::GetMiddlewares()[middlewareIndex];
+                  
+                  if(nullptr != middlewarePointer)
+                  {
+                    middlewarePointer->ProcessRestfulApiCommand(paramValue, paramValueLength, client);
+                  }
+                }
               }
             }
           }
         }
         
-        if(!requestParamsCount)
+        if(!requestParamsCount && nullptr != SdMiddleware::GetInstance())
         {
           SdMiddleware::GetInstance()->ReadFile(
             "/Index.html",
             (unsigned char*)requestBuffer,
-            64, 
+            min(64, REQUEST_BUFFER_SIZE),
             [&](size_t chunkLength, unsigned char chunk[]) -> bool{
               client.write(chunk, chunkLength);
               return true;
@@ -315,28 +284,33 @@ void WifiMiddleware::ProcessHttpServer()
         client.stop();
       }
     }
-    m_clientTimer = 0UL;
+    
+    m_clientTimer = 0;
   }
 }
 
 /*
  * Parse GET parameter(s) from the request.
  */
-size_t WifiMiddleware::ParseRequestParams(char request[], const size_t requestLength,
-  char requestParamNames[][REQUEST_PARAM_NAME_BUFFER_SIZE], char requestParamValues[][REQUEST_PARAM_VALUE_BUFFER_SIZE])
+size_t WifiMiddleware::ParseRequestParams(
+  char request[],
+  const size_t requestLength,
+  char requestParamNames[][REQUEST_PARAM_NAME_BUFFER_SIZE], 
+  char requestParamValues[][REQUEST_PARAM_VALUE_BUFFER_SIZE]
+)
 {
   size_t numParams = 0;
   size_t paramNameLength = 0;
   size_t paramValueLength = 0;
   size_t paramValueDecodedLength = 0;
-  char* saveptr1 = NULL;
-  char* saveptr2 = NULL;
-  char* str1 = NULL;
-  char* str2 = NULL;
-  char* token = NULL;
-  char* subtoken = NULL;
-  char* paramName = NULL;
-  char* paramValue = NULL;
+  char* saveptr1 = nullptr;
+  char* saveptr2 = nullptr;
+  char* str1 = nullptr;
+  char* str2 = nullptr;
+  char* token = nullptr;
+  char* subtoken = nullptr;
+  char* paramName = nullptr;
+  char* paramValue = nullptr;
   bool bail = false;
   const char term = request[requestLength];
   char paramValueDecoded[REQUEST_PARAM_VALUE_BUFFER_SIZE];
@@ -345,26 +319,26 @@ size_t WifiMiddleware::ParseRequestParams(char request[], const size_t requestLe
   if(requestLength > 0)
   {
     request[requestLength] = '\0';
-    for(str1 = request; ; str1 = NULL)
+    for(str1 = request; ; str1 = nullptr)
     {
       token = strtok_r(str1, "&", &saveptr1);
-      if(token == NULL)
+      if(token == nullptr)
       {
         break;
       }
-      for(str2 = token; ; str2 = NULL)
+      for(str2 = token; ; str2 = nullptr)
       {
         subtoken = strtok_r(str2, "=", &saveptr2);
-        if(subtoken == NULL)
+        if(subtoken == nullptr)
         {
           break;
         }
-        if(paramName == NULL)
+        if(paramName == nullptr)
         {
           paramName = subtoken;
           paramNameLength = min(REQUEST_PARAM_NAME_BUFFER_SIZE - 1, strlen(paramName));
         }
-        else if(paramValue == NULL)
+        else if(paramValue == nullptr)
         {
           paramValue = subtoken;
           paramValueLength = min(REQUEST_PARAM_VALUE_BUFFER_SIZE - 1, strlen(paramValue));
@@ -381,7 +355,7 @@ size_t WifiMiddleware::ParseRequestParams(char request[], const size_t requestLe
                 encodedByteStr[0] = paramValue[++i];
                 encodedByteStr[1] = paramValue[++i];
                 encodedByteStr[2] = '\0';
-                paramValueDecoded[paramValueDecodedLength++] = static_cast<char>(strtol(encodedByteStr, NULL, 16));
+                paramValueDecoded[paramValueDecodedLength++] = static_cast<char>(strtol(encodedByteStr, nullptr, 16));
               }
               else
               {
@@ -394,8 +368,8 @@ size_t WifiMiddleware::ParseRequestParams(char request[], const size_t requestLe
             numParams += 1;
           }
           
-          paramName = NULL;
-          paramValue = NULL;
+          paramName = nullptr;
+          paramValue = nullptr;
           paramValueDecodedLength = 0;
         }
       }

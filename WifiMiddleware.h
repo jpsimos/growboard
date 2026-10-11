@@ -17,6 +17,8 @@
 #define WF_EN_PIN 2
 
 // Other definitions
+#define SSID_BUFFER_SIZE 33
+#define KEY_BUFFER_SIZE 33
 #define REQUEST_BUFFER_SIZE 1024
 #define RESPONSE_BUFFER_SIZE REQUEST_BUFFER_SIZE
 #define MAX_REQUEST_PARAMS 2
@@ -31,27 +33,33 @@ class WifiMiddleware : public Middleware
   public:
     static WifiMiddleware* CreateInstance();
     static WifiMiddleware* GetInstance();
-    virtual bool Initialize();
     bool Connected() const;
-    void SetAutoconnect(const bool autoConnect);
-    void SetHttpEnabled(const bool httpEnable);
     virtual void Loop();
-    virtual int ProcessSerialCommands(const char inputLine[], ssize_t inputLineLength, Stream* stream);
+    virtual int ProcessSerialCommand(const char inputLine[], size_t inputLineLength);
     
   private:
     WifiMiddleware();
     virtual ~WifiMiddleware();
     void ProcessHttpServer();
-    size_t ParseRequestParams(char request[], const size_t requestLength,
-      char requestParamNames[][REQUEST_PARAM_NAME_BUFFER_SIZE], char requestParamValues[][REQUEST_PARAM_VALUE_BUFFER_SIZE]);
+    size_t ParseRequestParams(
+      char request[],
+      const size_t requestLength,
+      char requestParamNames[][REQUEST_PARAM_NAME_BUFFER_SIZE],
+      char requestParamValues[][REQUEST_PARAM_VALUE_BUFFER_SIZE]
+    );
 
   private:
     WiFiClass* m_wifiClass;
     WiFiServer* m_wifiServer;
+    bool m_loadedConfigFile;
+    bool m_initialConnect;
     bool m_autoConnect;
-    bool m_enableHttp;
+    bool m_autoReconnect;
     bool m_verbose;
     elapsedMillis m_clientTimer;
+    elapsedMillis m_connectTimer;
+    char m_ssid[SSID_BUFFER_SIZE];
+    char m_key[KEY_BUFFER_SIZE];
 };
 
 #endif

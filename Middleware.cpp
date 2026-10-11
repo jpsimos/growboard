@@ -13,17 +13,67 @@ Middleware** Middleware::GetMiddlewares()
 
 Middleware::Middleware(const Middleware::AbstractType abstractType) :
   m_abstractType(abstractType),
-  m_initialized(false)
+  m_watchdog(true)
 {
+}
+
+void Middleware::ForEach(std::function<bool(Middleware*)> callback)
+{
+  for(size_t i = 0; i < Middleware::NumMiddlewares; i++)
+  {
+    if(nullptr != Middleware::sm_middlewarePointers[i])
+    {
+      if(!callback(Middleware::sm_middlewarePointers[i]))
+      {
+        break;
+      }
+    }
+  }
 }
 
 bool Middleware::Register()
 {
-  if(Middleware::sm_middlewarePointerCursor < Middleware::NumMiddlewares)
+  bool alreadyRegistered = false;
+  Middleware** cursor = nullptr;
+  
+  for(size_t i = 0; i < Middleware::NumMiddlewares; i++)
   {
-    Middleware::sm_middlewarePointers[Middleware::sm_middlewarePointerCursor++] = this;
+    if(nullptr == Middleware::sm_middlewarePointers[i])
+    {
+      cursor = &Middleware::sm_middlewarePointers[i];
+    }
+    if(this == Middleware::sm_middlewarePointers[i])
+    {
+      alreadyRegistered = true;
+      break;
+    }
+  }
+
+  if(!alreadyRegistered && cursor != nullptr)
+  {
+    *cursor = this;
     return true;
   }
+
+  return false;
+}
+
+bool Middleware::GetWatchdog() const
+{
+  return m_watchdog;
+}
+
+bool Middleware::Unregister()
+{
+  for(size_t i = 0; i < Middleware::NumMiddlewares; i++)
+  {
+    if(this == Middleware::sm_middlewarePointers[i])
+    {
+      Middleware::sm_middlewarePointers[i] = nullptr;
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -32,12 +82,13 @@ Middleware::AbstractType Middleware::GetAbstractType() const
   return m_abstractType;
 }
 
-bool Middleware::Initialize()
+int Middleware::ProcessSerialCommand(const char inputLine[], size_t inputLineLength)
 {
-  return m_initialized;
+  return COMMAND_IGNORE;
 }
 
-int Middleware::ProcessSerialCommands(const char inputLine[], ssize_t inputLineLength, Stream* stream)
+int Middleware::ProcessRestfulApiCommand(const char inputLine[], size_t inputLineLength, WiFiClient& client)
 {
+  // Output written to the client should be in JSON.
   return COMMAND_IGNORE;
 }

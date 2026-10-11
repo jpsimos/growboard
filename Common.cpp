@@ -5,25 +5,32 @@
 #include <elapsedMillis.h>
 #include "Common.h"
 
-namespace IO
-{
-  Stream* InOutStream = &Serial;
-}
-
 namespace Text
 {
-  ssize_t ReadLine(char input[], ssize_t maxLengthInclTerm, Stream* stream)
+  size_t ReadLine(char input[], const size_t maxLengthInclTerm)
   {
-    ssize_t num = 0;
+    size_t num = 0;
+    char in;
     elapsedMillis timeout;
     do
     {
-      if(stream->available())
+      if(Serial.available())
       {
-        char in = static_cast<char>(stream->read());
+        in = static_cast<char>(Serial.read());
+        
         if('\n' != in && '\r' != in)
         {
-          input[num++] = in;
+          if(input)
+          {
+            if(num < maxLengthInclTerm)
+            {
+              input[num++] = in;
+            }
+            else
+            {
+              break;
+            }
+          }
         }
         else
         {
@@ -36,18 +43,22 @@ namespace Text
         num = 0;
         break;
       }
+      else
+      {
+        yield();
+      }
     }
     while(num < maxLengthInclTerm - 1);
     input[num] = '\0';
     return num;
   }
   
-  bool streq(const char *a, const char *b)
+  bool CStrEq(const char *a, const char *b, const bool caseSensitive)
   {
     bool equal = static_cast<bool>(a != b && a != NULL && b != NULL);
   	while(equal && a != b)
   	{
-      if(*a != *b)
+      if(caseSensitive ? (*a != *b) : (tolower(*a) != tolower(*b)))
       {
         equal = false;
       }
@@ -59,7 +70,7 @@ namespace Text
     return equal;
   }
   
-  char* stripNewLine(char str[])
+  char* CStrStripNewLine(char str[])
   {
     char* nl = strchr(str, '\r');
     if(nl != NULL)
@@ -73,13 +84,30 @@ namespace Text
     }
     return str;
   }
+
+  char* CStrLStrip(char str[])
+  {
+    char* ret = nullptr;
+    
+    if(str)
+    {
+      ret = &str[0];
+      
+      while(*ret != '\0' && isblank(*ret))
+      {
+         ret = ret + 1;
+      }
+    }
+    
+    return ret;
+  }
 } // namespace Text
 
 namespace Numeric
 {
   bool CompareDouble(const double a, const double b, const double epsilon)
   {
-    return static_cast<bool>(fabs(fabs(a) - fabs(b)) <= epsilon);
+    return static_cast<bool>(fabs(fabs(a) - fabs(b)) <= fabs(epsilon));
   }
   
 } // namespace Numeric
