@@ -1,34 +1,68 @@
-growboard project
-Adafruit Feather Wi-Fi
+# growboard
 
-Author Jacob A. Psimos
-------------------------------------------------------------------
+**Greenroom companion for the Adafruit Feather M0 WiFi**
 
-- Real Time Clock + SD
-- SHT4X hygrometer
+Author: Jacob A. Psimos  
+Repository: [github.com/jpsimos/growboard](https://github.com/jpsimos/growboard)
+
+---
+
+Greenroom companion board that controls relays and takes air quality measurements.  
+Supports an SHT4x hygrometer, RTC + SD card, and a Wi-Fi client with an embedded HTTP server exposing a basic RESTful API.
+
+## Features
+
+- Real-Time Clock (I2C) + SD card (FAT32) for configuration and logging
+- SHT4X digital hygrometer
+- Air quality measurements
+- Relay control
 - Wi-Fi client with HTTP server supporting basic RESTful API requests
+- Modular middleware architecture
+- Simple HTML template served over HTTP (JavaScript + C++ handling of GET requests)
+- Configuration loaded from a text file on the SD card
 
-------------------------------------------------------------------
+## Hardware
 
-Greenroom companion board that controls relays and takes air quality measurements.
-Configuration for the Wi-Fi is in a text file that is suppose to exist on the SD card.
-I've included a template config file that should be placed on an SD card formatted with FAT32.
-For the sake of accuracy, I've added support for an I2C RTC that allows time keeping and 
-file system datetime functionality. Moreover, there is a HTTP server that has a basic HTML
-template that I've included for your reading pleasure. Dive into the javascript and C++ code
-to see how RESTful GET requests are processed through the client -> middleware.
+Built for the **Adafruit Feather M0 WiFi** (ATSAMD21 + ATWINC1500).
 
-The Wi-Fi middleware does not automatically re-connect if it looses connection. It *should* be
-easy to work in such a feature.
+## Requirements
 
-------------------------------------------------------------------
+- Arduino IDE configured for **C++17**
+- SD card formatted as **FAT32**
+- Configuration text file placed on the SD card (a template is provided with the project; place it on the card)
 
-Your Arduino IDE must be configured to use C++17.
+## Configuration
 
-Know that in the United States, Wi-Fi channels 12-14 are generally prohibited
-and the Atmel BSP *should* be modified to mask out those channels. If you are 
-interested in making your BSP compliant, you can contact me at jpsimos@gmail.com
-and I will be happy to share the diffs for the Wi-Fi library that disables those channels
-or the diffs to enable C++17 for the Feather board.
+Wi-Fi credentials and other settings are read from a text file on the SD card at startup.  
+The included template should be copied to a FAT32-formatted SD card and edited with your network details before first use.
+
+## Architecture
+
+The sketch uses a middleware pattern. Components are registered at startup:
+
+- `RtcMiddleware` — I2C RTC for timekeeping and filesystem timestamps
+- `SdMiddleware` — SD card access
+- `WifiMiddleware` — Wi-Fi connection + HTTP server / REST API
+- `HygrometerMiddleware` — SHT4x sensor
+- `RelayMiddleware` — Relay control
+- `AirQualityMiddleware` — Air quality sensing
+
+Main sketch: `growboard.ino`
+
+The Wi-Fi middleware does **not** automatically reconnect if the connection is lost. Adding this behavior should be straightforward.
+
+## Notes
+
+In the United States, Wi-Fi channels 12–14 are generally prohibited. The Atmel BSP should be modified to mask those channels.  
+
+For diffs that disable those channels, or for enabling C++17 support on the Feather board, contact the author at **jpsimos@gmail.com**.
+
+## Getting Started
+
+1. Install the Adafruit SAMD board package and select the Feather M0 WiFi board.
+2. Ensure the Arduino IDE is set to use C++17.
+3. Place the config template on a FAT32 SD card and edit it with your Wi-Fi credentials.
+4. Open `growboard.ino`, compile, and upload.
+5. The board will connect to Wi-Fi and serve the HTTP interface / REST endpoints.
 
 Happy hacking.
