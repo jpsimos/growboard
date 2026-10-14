@@ -22,9 +22,4 @@ namespace Text
   char* CStrLStrip(char str[]);
 }
 
-namespace Numeric
-{
-  bool CompareDouble(const double a, const double b, const double epsilon = 0.0001);
-}
-
 #endif

@@ -184,12 +184,13 @@ void WifiMiddleware::ProcessHttpServer()
           {
             requestBuffer[requestLength++] = static_cast<char>(client.read());
             requestBuffer[requestLength] = '\0';
-            if(requestLength > 3)
+            if(
+              requestBuffer[requestLength - 3] == '\n' && 
+              requestBuffer[requestLength - 2] == '\r' && 
+              requestBuffer[requestLength - 1] == '\0'
+            )
             {
-              if(Text::CStrEq(&requestBuffer[requestLength - 3], "\n\r\n"))
-              {
-                break;
-              }
+              break;
             }
             timeout = 0;
           }
@@ -254,15 +255,12 @@ void WifiMiddleware::ProcessHttpServer()
               }
               if(paramValueLength && Text::CStrEq(paramName, "command"))
               {
-                for(size_t middlewareIndex = 0; middlewareIndex < Middleware::NumMiddlewares; middlewareIndex++)
-                {
-                  Middleware* middlewarePointer = Middleware::GetMiddlewares()[middlewareIndex];
-                  
-                  if(nullptr != middlewarePointer)
-                  {
-                    middlewarePointer->ProcessRestfulApiCommand(paramValue, paramValueLength, client);
+                 Middleware::ForEach(
+                  [&](Middleware* middlewarePtr) -> bool {
+                    middlewarePtr->ProcessRestfulApiCommand(paramValue, paramValueLength, client);
+                    return true;
                   }
-                }
+                );
               }
             }
           }
@@ -348,7 +346,7 @@ size_t WifiMiddleware::ParseRequestParams(
             strncpy(requestParamNames[numParams], paramName, REQUEST_PARAM_NAME_BUFFER_SIZE);
             requestParamNames[numParams][paramNameLength] = '\0';
             
-            for(size_t i = 0; i < paramValueLength; i += 1)
+            for(size_t i = 0; i < paramValueLength; i++)
             {
               if(paramValue[i] == '%' && paramValueLength > (i + 2))
               {

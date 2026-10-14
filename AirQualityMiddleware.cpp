@@ -6,7 +6,6 @@
 #include "HygrometerMiddleware.h"
 #include "SdMiddleware.h"
 
-
 AirQualityMiddleware* AirQualityMiddleware::CreateInstance()
 {
   if(AirQualityMiddleware::sm_singletonPointer == nullptr)
@@ -65,13 +64,10 @@ bool AirQualityMiddleware::Configure()
 
     if(!hadError)
     {
-      hadError = !HygrometerMiddleware::GetInstance()->Sample(&temperature, &humidity);
+      hadError = !HygrometerMiddleware::GetInstance()->Sample(&temperature, &humidity, false);
       
       if(!hadError)
       {
-        temperature -= 32.0;
-        temperature *= 5.0;
-        temperature /= 9.0;
         m_ccs811->setEnvironmentalData(humidity, temperature);
       }
     }

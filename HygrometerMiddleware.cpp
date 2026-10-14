@@ -38,7 +38,7 @@ HygrometerMiddleware::HygrometerMiddleware() :
     }
 }
 
-bool HygrometerMiddleware::Sample(float* temperature, float* humidity)
+bool HygrometerMiddleware::Sample(float* temperature, float* humidity, const bool fahrenheit)
 {
   sensors_event_t humidity_;
   sensors_event_t temperature_;
@@ -50,7 +50,7 @@ bool HygrometerMiddleware::Sample(float* temperature, float* humidity)
       m_hygSampleTimer = 0;
       if(m_sht41->getEvent(&humidity_, &temperature_))
       {
-        m_temperature = (((float)temperature_.temperature * 9.0) / 5.0) + 32.0;
+        m_temperature = fahrenheit ? ((((float)temperature_.temperature * 9.0) / 5.0) + 32.0) : (float)temperature_.temperature;
         m_humidity = (float)humidity_.relative_humidity;
         if(m_temperature > m_maxTemperature)
         {

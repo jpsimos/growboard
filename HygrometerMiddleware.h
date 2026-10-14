@@ -23,7 +23,7 @@ class HygrometerMiddleware : public Middleware
   public:
     static HygrometerMiddleware* CreateInstance();
     static HygrometerMiddleware* GetInstance();
-    bool Sample(float* temperature, float* humidity);
+    bool Sample(float* temperature, float* humidity, const bool fahrenheit = true);
     float GetMaxTemperature();
     float GetMinTemperature();
     float GetMaxHumidity();

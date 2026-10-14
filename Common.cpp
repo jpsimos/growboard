@@ -102,12 +102,3 @@ namespace Text
     return ret;
   }
 } // namespace Text
-
-namespace Numeric
-{
-  bool CompareDouble(const double a, const double b, const double epsilon)
-  {
-    return static_cast<bool>(fabs(fabs(a) - fabs(b)) <= fabs(epsilon));
-  }
-  
-} // namespace Numeric
