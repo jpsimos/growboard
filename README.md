@@ -49,8 +49,6 @@ The sketch uses a middleware pattern. Components are registered at startup:
 
 Main sketch: `growboard.ino`
 
-The Wi-Fi middleware does **not** automatically reconnect if the connection is lost. Adding this behavior should be straightforward.
-
 ## Notes
 
 In the United States, Wi-Fi channels 12–14 are generally prohibited. The Atmel BSP should be modified to mask those channels.  
