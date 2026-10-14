@@ -27,7 +27,7 @@ Built for the **Adafruit Feather M0 WiFi** (ATSAMD21 + ATWINC1500).
 
 ## Requirements
 
-- Arduino IDE configured for **C++17**
+- Arduino IDE configured for **C++17** [github.com/jpsimos/ArduinoCore-samd](https://github.com/jpsimos/ArduinoCore-samd)
 - SD card formatted as **FAT32**
 - Configuration text file placed on the SD card (a template is provided with the project; place it on the card)
 
@@ -53,7 +53,7 @@ Main sketch: `growboard.ino`
 
 In the United States, Wi-Fi channels 12–14 are generally prohibited. The Atmel BSP should be modified to mask those channels.  
 
-Required WiFi101 fork at github.com/jpsimos/WiFi101
+Required WiFi101 fork at [github.com/jpsimos/WiFi101](https://github.com/jpsimos/WiFi101)
 
 ## Getting Started
 
