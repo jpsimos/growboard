@@ -274,6 +274,8 @@ void WifiMiddleware::ProcessHttpServer()
             min(64, REQUEST_BUFFER_SIZE),
             [&](size_t chunkLength, unsigned char chunk[]) -> bool{
               client.write(chunk, chunkLength);
+              for(int i = 0; i < chunkLength; i++)
+                Serial.write(chunk[i]);
               return true;
             }
           );

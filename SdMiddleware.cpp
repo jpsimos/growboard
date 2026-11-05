@@ -207,14 +207,9 @@ bool SdMiddleware::LoadConfigTxt(
 
 bool SdMiddleware::LoadAirQualityBaseline(uint16_t& baseline)
 {
-  File32 airQualityBaselineFile;
-  bool hadError = !airQualityBaselineFile.open("/AirQualityBaseline.bin", FILE_READ);
+  bool hadError;
   
-  if(!hadError)
-  {
-    hadError = !(airQualityBaselineFile.read(reinterpret_cast<void*>(&baseline), sizeof(uint16_t)) == sizeof(uint16_t));
-    airQualityBaselineFile.close();
-  }
+  hadError = ReadFile("/AirQualityBaseline.bin", reinterpret_cast<unsigned char*>(&baseline), 2);
 
   return !hadError;
 }
@@ -224,11 +219,11 @@ bool SdMiddleware::SaveAirQualityBaseline(const uint16_t baseline)
   bool hadError;
   File32 airQualityBaselineFile;
 
-  hadError = !airQualityBaselineFile.open("/AirQualityBaseline.bin", FILE_WRITE);
+  hadError = !airQualityBaselineFile.open("/AirQualityBaseline.bin", O_RDWR | O_CREAT | O_TRUNC);
 
   if(!hadError)
   {
-    hadError = !(airQualityBaselineFile.write(reinterpret_cast<void*>(const_cast<uint16_t*>(&baseline)), sizeof(uint16_t)) == sizeof(uint16_t));
+    hadError = !(airQualityBaselineFile.write(reinterpret_cast<void*>(const_cast<uint16_t*>(&baseline)), 2));
     airQualityBaselineFile.close();
   }
 
@@ -247,10 +242,7 @@ bool SdMiddleware::AppendLog(const char path[], const char msg[])
     
     if(msgLength > 0)
     {
-      if(!file.open(path, FILE_APPEND))
-      {
-        file.open(path, FILE_WRITE);
-      }
+      file.open(path, FILE_WRITE);
       if(file.isOpen())
       {
         const char* const now = RtcMiddleware::GetInstance()->NowString();
@@ -273,15 +265,19 @@ bool SdMiddleware::AppendLog(const char path[], const char msg[])
   return !hadError;
 }
 
-uint64_t SdMiddleware::GetFileLength(const char path[])
+long SdMiddleware::GetFileLength(const char path[])
 {
-  uint64_t length = 0;
+  long length;
   File32 file;
   
   if(path && file.open(path, FILE_READ))
   {
     length = file.fileSize();
     file.close();
+  }
+  else
+  {
+    length = -1;
   }
   
   return length;
@@ -291,8 +287,7 @@ int SdMiddleware::ReadFile(const char path[], unsigned char data[], const size_t
 {
   int numBytes = 0;
   File32 file;
-  
-  if(path && data && dataSize > 0 && file.open(path, FILE_READ))
+  if(data && dataSize > 0 && file.open(path, FILE_READ))
   {
     numBytes = file.read(data, dataSize);
     file.close();
@@ -305,7 +300,7 @@ int SdMiddleware::ReadFile(const char path[], unsigned char chunkBuffer[], const
   int numBytes = 0;
   File32 file;
   
-  if(path && chunkBuffer && chunkSize > 0 && file.open(path, FILE_READ))
+  if(file.open(path, FILE_READ))
   {
     while(numBytes < file.fileSize())
     {
@@ -331,11 +326,15 @@ int SdMiddleware::ReadFile(const char path[], unsigned char chunkBuffer[], const
 
 void SdMiddleware::FsDateTimeCallback(uint16_t* date, uint16_t* time)
 {
-  RtcMiddleware* rtcMiddleware = RtcMiddleware::GetInstance();
+  DateTime now;
+  RtcMiddleware* rtcMiddleware;
+  
+  rtcMiddleware = RtcMiddleware::GetInstance();
 
   if(nullptr != rtcMiddleware)
   {
-    DateTime now = rtcMiddleware->Now();
+    now = rtcMiddleware->Now();
+    
     if(date != nullptr)
     {
        *date = FS_DATE(now.year(), now.month(), now.day());

@@ -50,7 +50,8 @@ class SdMiddleware : public Middleware
     bool LoadAirQualityBaseline(uint16_t& baseline);
     bool SaveAirQualityBaseline(const uint16_t baseline);
     bool AppendLog(const char path[], const char msg[]);
-    uint64_t GetFileLength(const char path[]);
+    bool FileExists(const char path[]);
+    long GetFileLength(const char path[]);
     int ReadFile(const char path[], unsigned char data[], const size_t dataSize);
     int ReadFile(const char path[], unsigned char chunkBuffer[], const size_t chunkSize, ReadFileChunkFunc onReadChunk);
     

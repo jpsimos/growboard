@@ -10,6 +10,7 @@
 #include "HygrometerMiddleware.h"
 #include "RelayMiddleware.h"
 #include "AirQualityMiddleware.h"
+#include "LightMiddleware.h"
 #include <Adafruit_SleepyDog.h>
 
 void setup()
@@ -22,9 +23,10 @@ void setup()
   RtcMiddleware::CreateInstance()->Register();
   SdMiddleware::CreateInstance()->Register();
   WifiMiddleware::CreateInstance()->Register();
-  HygrometerMiddleware::CreateInstance()->Register();
   RelayMiddleware::CreateInstance()->Register();
+  HygrometerMiddleware::CreateInstance()->Register();
   AirQualityMiddleware::CreateInstance()->Register();
+  LightMiddleware::CreateInstance()->Register();
 }
 
 void loop()

@@ -90,32 +90,45 @@ int RtcMiddleware::ProcessRestfulApiCommand(const char inputLine[], size_t input
   unsigned int hour;
   unsigned int minute;
   unsigned int second;
+
+  if(m_rtcBoard != nullptr)
+  {
+    if(Text::CStrEq(inputLine, "rtc status"))
+    {
+      client.print("{\"running\":");
+      client.print(m_rtcBoard->isrunning() ? "true" : "false");
+      client.print(",\"lowbattery\":");
+      client.print(m_rtcBoard->lowBattery() ? "true" : "false");
+      client.println("}");
   
-  if(Text::CStrEq(inputLine, "rtc read"))
-  {
-    char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
-    m_rtcBoard->now().toString(buffer);
-
-    client.print("{\"datetime\":\"");
-    client.print(buffer);
-    client.println("\"}");
-    
-    commandResult |= COMMAND_OK;
+      commandResult = COMMAND_OK;
+    }
+    else if(Text::CStrEq(inputLine, "rtc now"))
+    {
+      char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
+      m_rtcBoard->now().toString(buffer);
+  
+      client.print("{\"datetime\":\"");
+      client.print(buffer);
+      client.println("\"}");
+      
+      commandResult = COMMAND_OK;
+    }
+    else if(6 == sscanf(inputLine, "rtc set %u/%u/%u %u:%u:%u", &month, &day, &year, &hour, &minute, &second))
+    {
+      m_rtcBoard->adjust(DateTime(year, month, day, hour, minute, second));
+  
+      char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
+      m_rtcBoard->now().toString(buffer);
+  
+      client.print("{\"new_datetime\":\"");
+      client.print(buffer);
+      client.println("\"}");
+      
+      commandResult = COMMAND_OK;
+    }
   }
-  else if(6 == sscanf(inputLine, "rtc set %u/%u/%u %u:%u:%u", &month, &day, &year, &hour, &minute, &second))
-  {
-    m_rtcBoard->adjust(DateTime(year, month, day, hour, minute, second));
-
-    char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
-    m_rtcBoard->now().toString(buffer);
-
-    client.print("{\"new_datetime\":\"");
-    client.print(buffer);
-    client.println("\"}");
-    
-    commandResult |= COMMAND_OK;
-  }
-
+  
   return commandResult;
 }
 
@@ -129,17 +142,28 @@ int RtcMiddleware::ProcessSerialCommand(const char inputLine[], size_t inputLine
   unsigned int minute;
   unsigned int second;
 
-  if(Text::CStrEq(inputLine, "rtc read"))
+  if(m_rtcBoard != nullptr)
   {
-    char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
-    m_rtcBoard->now().toString(buffer);
-    Serial.println(buffer);
-    commandResult |= COMMAND_OK;
-  }
-  else if(6 == sscanf(inputLine, "rtc set %u/%u/%u %u:%u:%u", &month, &day, &year, &hour, &minute, &second))
-  {
-    m_rtcBoard->adjust(DateTime(year, month, day, hour, minute, second));
-    commandResult |= COMMAND_OK;
+    if(Text::CStrEq(inputLine, "rtc status"))
+    {
+      Serial.print("Running: ");
+      Serial.println(m_rtcBoard->isrunning());
+      Serial.print("Low Battery: ");
+      Serial.println(m_rtcBoard->lowBattery());
+      commandResult = COMMAND_OK;
+    }
+    else if(Text::CStrEq(inputLine, "rtc now"))
+    {
+      char buffer[] = "DDD, DD MMM YYYY hh:mm:ss";
+      m_rtcBoard->now().toString(buffer);
+      Serial.println(buffer);
+      commandResult = COMMAND_OK;
+    }
+    else if(6 == sscanf(inputLine, "rtc set %u/%u/%u %u:%u:%u", &month, &day, &year, &hour, &minute, &second))
+    {
+      m_rtcBoard->adjust(DateTime(year, month, day, hour, minute, second));
+      commandResult = COMMAND_OK;
+    }
   }
   
   return commandResult;
@@ -147,5 +171,5 @@ int RtcMiddleware::ProcessSerialCommand(const char inputLine[], size_t inputLine
 
 void RtcMiddleware::HandleIsr()
 {
-  RtcMiddleware* rtcMiddleware = RtcMiddleware::GetInstance();
+  return;
 }
