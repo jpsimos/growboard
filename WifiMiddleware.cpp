@@ -26,12 +26,12 @@ WifiMiddleware* WifiMiddleware::GetInstance()
 WifiMiddleware::WifiMiddleware() :
   Middleware(Middleware::AbstractType::WIFI_CARD),
   m_wifiClass(&WiFi),
-  m_wifiServer(new WiFiServer{80}),
+  m_wifiServer(new WiFiServer{80}), 
   m_loadedConfigFile(false),
   m_initialConnect(false),
   m_autoConnect(false),
   m_autoReconnect(false),
-  m_verbose(true),
+  m_verbose(false),
   m_clientTimer(),
   m_connectTimer(),
   m_ssid(),
@@ -184,11 +184,7 @@ void WifiMiddleware::ProcessHttpServer()
           {
             requestBuffer[requestLength++] = static_cast<char>(client.read());
             requestBuffer[requestLength] = '\0';
-            if(
-              requestBuffer[requestLength - 3] == '\n' && 
-              requestBuffer[requestLength - 2] == '\r' && 
-              requestBuffer[requestLength - 1] == '\0'
-            )
+            if(Text::CStrEq(&requestBuffer[requestLength - 3], "\n\r\n"))
             {
               break;
             }
@@ -223,14 +219,15 @@ void WifiMiddleware::ProcessHttpServer()
         
           if(!requestParamsCount)
           {
-            client.println("html");
+            client.print("html");
           }
           else
           {
-            client.println("json");
+            client.print("json");
           }
 
-          client.println(
+          client.print(
+            "\r\n"
             "Connection: close\r\n"
             "\r\n"
           );
@@ -356,6 +353,10 @@ size_t WifiMiddleware::ParseRequestParams(
                 encodedByteStr[1] = paramValue[++i];
                 encodedByteStr[2] = '\0';
                 paramValueDecoded[paramValueDecodedLength++] = static_cast<char>(strtol(encodedByteStr, nullptr, 16));
+              }
+              else if(paramValue[i] == '+')
+              {
+                paramValueDecoded[paramValueDecodedLength++] = ' ';
               }
               else
               {

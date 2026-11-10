@@ -100,7 +100,7 @@ bool AirQualityMiddleware::UpdateEnvironment()
 
   if(!hadError)
   {
-    hadError = !HygrometerMiddleware::GetInstance()->Sample(&temperature, &humidity, false);
+    hadError = !HygrometerMiddleware::GetInstance()->Sample(temperature, humidity, false);
     
     if(!hadError)
     {

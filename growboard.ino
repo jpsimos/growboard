@@ -34,7 +34,7 @@ void loop()
   char command[Middleware::MaxCommandLengthInclTerm];
   size_t commandLength;
   bool watchdog;
-
+  
   Middleware::ForEach(
     [=](Middleware* middlewarePtr) -> bool {
       middlewarePtr->Loop();
@@ -48,7 +48,15 @@ void loop()
   {
      Middleware::ForEach(
       [=](Middleware* middlewarePtr) -> bool {
-        middlewarePtr->ProcessSerialCommand(command, commandLength);
+        const int commandResult = middlewarePtr->ProcessSerialCommand(command, commandLength);
+        if(COMMAND_OK == commandResult)
+        {
+          Serial.println("OK");
+        }
+        else if(COMMAND_ERROR == commandResult)
+        {
+          Serial.println("ERR");
+        }
         return true;
       }
     );

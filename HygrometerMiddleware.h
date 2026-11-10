@@ -23,23 +23,13 @@ class HygrometerMiddleware : public Middleware
   public:
     static HygrometerMiddleware* CreateInstance();
     static HygrometerMiddleware* GetInstance();
-    bool Sample(float* temperature, float* humidity, const bool fahrenheit = true);
-    float GetMaxTemperature();
-    float GetMinTemperature();
-    float GetMaxHumidity();
-    float GetMinHumidity();
+    bool Sample(float& temperature, float& humidity, const bool fahrenheit = true);
     virtual int ProcessSerialCommand(const char inputLine[], size_t inputLineLength);
     virtual int ProcessRestfulApiCommand(const char inputLine[], size_t inputLineLength, WiFiClient& client);
 
   private:
     Adafruit_SHT4x* m_sht41;
     elapsedMillis m_hygSampleTimer;
-    float m_temperature;
-    float m_humidity;
-    float m_maxTemperature;
-    float m_maxHumidity;
-    float m_minTemperature;
-    float m_minHumidity;
 };
 
 #endif

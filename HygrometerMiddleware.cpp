@@ -4,7 +4,6 @@
 
 #include "HygrometerMiddleware.h"
 #include "Common.h"
-#include <limits>
 
 HygrometerMiddleware* HygrometerMiddleware::CreateInstance()
 {
@@ -23,13 +22,7 @@ HygrometerMiddleware* HygrometerMiddleware::GetInstance()
 HygrometerMiddleware::HygrometerMiddleware() :
   Middleware(Middleware::AbstractType::HYGROMETER_SENSOR),
   m_sht41(new Adafruit_SHT4x()),
-  m_hygSampleTimer(0U),
-  m_temperature(0.0f),
-  m_humidity(0.0f),
-  m_maxTemperature(std::numeric_limits<float>::min()),
-  m_maxHumidity(std::numeric_limits<float>::min()),
-  m_minTemperature(std::numeric_limits<float>::max()),
-  m_minHumidity(std::numeric_limits<float>::max())
+  m_hygSampleTimer()
 {
     if(m_sht41->begin())
     {
@@ -38,87 +31,41 @@ HygrometerMiddleware::HygrometerMiddleware() :
     }
 }
 
-bool HygrometerMiddleware::Sample(float* temperature, float* humidity, const bool fahrenheit)
+bool HygrometerMiddleware::Sample(float& temperature, float& humidity, const bool fahrenheit)
 {
   sensors_event_t humidity_;
   sensors_event_t temperature_;
   
-  if(m_sht41 != nullptr)
+  if(m_sht41 != nullptr && m_hygSampleTimer > 200)
   {
-    if(m_hygSampleTimer > 200)
+    m_hygSampleTimer = 0;
+    
+    if(m_sht41->getEvent(&humidity_, &temperature_))
     {
-      m_hygSampleTimer = 0;
-      if(m_sht41->getEvent(&humidity_, &temperature_))
-      {
-        m_temperature = fahrenheit ? ((((float)temperature_.temperature * 9.0) / 5.0) + 32.0) : (float)temperature_.temperature;
-        m_humidity = (float)humidity_.relative_humidity;
-        if(m_temperature > m_maxTemperature)
-        {
-          m_maxTemperature = m_temperature;
-        }
-        else if(m_temperature < m_minTemperature)
-        {
-          m_minTemperature = m_temperature;
-        }
-        if(m_humidity > m_maxHumidity)
-        {
-          m_maxHumidity = m_humidity;
-        }
-        else if(m_humidity < m_minHumidity)
-        {
-          m_minHumidity = m_humidity;
-        }
-      }
-      else
-      {
-        return false;
-      }
+      temperature = fahrenheit ? ((((float)temperature_.temperature * 9.0) / 5.0) + 32.0) : (float)temperature_.temperature;
+      humidity = (float)humidity_.relative_humidity;
+      return true;
     }
-    if(temperature != nullptr)
-    {
-      *temperature = m_temperature;
-    }
-    if(humidity != nullptr)
-    {
-      *humidity = m_humidity;
-    }
-    return true;
   }
+  
   return false;
 }
 
-float HygrometerMiddleware::GetMaxTemperature()
-{
-  return m_maxTemperature;
-}
-
-float HygrometerMiddleware::GetMinTemperature()
-{
-  return m_minTemperature;
-}
-
-float HygrometerMiddleware::GetMaxHumidity()
-{
-  return m_maxHumidity;
-}
-
-float HygrometerMiddleware::GetMinHumidity()
-{
-  return m_minHumidity;
-}
 
 int HygrometerMiddleware::ProcessRestfulApiCommand(const char inputLine[], size_t inputLineLength, WiFiClient& client)
 {
   int commandResult = COMMAND_IGNORE;
-
-  if(Text::CStrEq(inputLine, "hyg status"))
+  float temperature;
+  float humidity;
+  
+  if(Text::CStrEq(inputLine, "hyg read"))
   {
-    if(Sample(nullptr, nullptr))
+    if(Sample(temperature, humidity))
     {
       client.print("{\"temperature\":");
-      client.print(m_temperature);
+      client.print(temperature);
       client.print(",\"humidity\":");
-      client.print(m_humidity);
+      client.print(humidity);
       client.println("}");
       commandResult = COMMAND_OK;
     }
@@ -134,15 +81,18 @@ int HygrometerMiddleware::ProcessRestfulApiCommand(const char inputLine[], size_
 int HygrometerMiddleware::ProcessSerialCommand(const char inputLine[], size_t inputLineLength)
 {
   int commandResult = COMMAND_IGNORE;
+  float temperature;
+  float humidity;
+  
   if(Text::CStrEq(inputLine, "hyg read"))
   {
-    if(Sample(nullptr, nullptr))
+    if(Sample(temperature, humidity, true))
     {
       Serial.print("Temperature: ");
-      Serial.print(m_temperature);
+      Serial.print(temperature);
       Serial.println(" F");
       Serial.print("Humidity: ");
-      Serial.print(m_humidity);
+      Serial.print(humidity);
       Serial.println("% rH");
       commandResult = COMMAND_OK;
     }
@@ -151,30 +101,6 @@ int HygrometerMiddleware::ProcessSerialCommand(const char inputLine[], size_t in
       commandResult = COMMAND_ERROR;
     }
   }
-  else if(Text::CStrEq(inputLine, "hyg status"))
-  {
-    if(Sample(nullptr, nullptr))
-    {
-      Serial.print("Temperature: ");
-      Serial.print(m_temperature);
-      Serial.print(", ");
-      Serial.print(m_minTemperature);
-      Serial.print(", ");
-      Serial.print(m_maxTemperature);
-      Serial.println(" F");
-      Serial.print("Humidity: ");
-      Serial.print(m_humidity);
-      Serial.print(", ");
-      Serial.print(m_minHumidity);
-      Serial.print(", ");
-      Serial.print(m_maxHumidity);
-      Serial.println(" %");
-      commandResult = COMMAND_OK;
-    }
-    else
-    {
-      commandResult = COMMAND_ERROR;
-    }
-  }
+  
   return commandResult;
 }
